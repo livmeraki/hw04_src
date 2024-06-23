@@ -28,5 +28,11 @@ typedef struct {
 } Process;
 
 // TODO: You can add more definitions 
+char *phy_memory;
+int register_set[MAX_REGISTERS];
+int frame_list[NUM_PAGES];
+Process process_list[MAX_PROCESSES];
+int process_count;
+int clock;
 
 #endif

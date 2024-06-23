@@ -22,6 +22,10 @@ int main(int argc, char *argv[])
     simulate();
 
     // TODO: free memory - process list, frame, ...
+    free(phy_memory);
+    for (int i = 0; i < process_count; i++) {
+        free(process_list[i].page_table);
+    }
 
     return 0;
 }
@@ -41,6 +45,10 @@ void initialize()
     }
 
     // TODO: Initialize frame list, process list, ... 
+    for (i = 0; i < NUM_PAGES; i++) {
+        frame_list[i] = -1;  // -1 indicates the frame is free
+    }
+    process_count = 0;
 }
 
 
@@ -54,19 +62,39 @@ void load(const char *filename, int pid)
     }
 
     // TODO: Create a process  
-    Process *process = ... 
-    
+    Process *process = &process_list[pid]; 
+    process->pid = pid;
+    process->pc = 0x00000000;
+
+    fscanf(file, "%d %d", &process->size, &process->num_inst);
+
     // TODO: Create a page table of the process 
-    
+    process->page_table = (PageTableEntry *) malloc(sizeof(PageTableEntry) * (process->size / PAGE_SIZE));
+    for (int i = 0; i < (process->size / PAGE_SIZE); i++) {
+        process->page_table[i].frame_number = -1;
+        process->page_table[i].valid = 0;
+    }
+
     // TODO: Clear temporary register set of process 
-    
+    for (int i = 0; i < MAX_REGISTERS; i++) {
+        process->temp_reg_set[i] = 0;
+    }
+
     // TODO: Load instructions into page 
-    
+    char instruction[INSTRUCTION_SIZE];
+    int instruction_index = 0;
+    while (fgets(instruction, INSTRUCTION_SIZE, file) != NULL) {
+        int virt_addr = instruction_index * INSTRUCTION_SIZE;
+        write_page(process, virt_addr, instruction, strlen(instruction));
+        instruction_index++;
+    }
+
     // Set PC 
     process->pc = 0x00000000;
 
     // TODO: Insert process into process list 
-    
+    process_list[process_count++] = *process;
+
     fclose(file);
 }
 
@@ -77,16 +105,32 @@ void simulate()
     int finish; 
 
     // TODO: Repeat simulation until the process list is empty 
-    while (process list is not empty) {
+    while (process_count > 0) {
         // TODO: Select a process from process list using round-robin scheme 
+        for (int i = 0; i < process_count; i++) {
+            Process *process = &process_list[i];
 
-        // TODO: Execue a processs 
-        finish = execute(process); 
+            // TODO: Execue a processs 
+            finish = execute(process); 
 
-        // TODO: If the process is terminated then 
-        //       call print_register_set(), 
-        //       reclaim allocated frames, 
-        //       and remove process from process list 
+            // TODO: If the process is terminated then 
+            //       call print_register_set(), 
+            //       reclaim allocated frames, 
+            //       and remove process from process list 
+            if (finish) {
+                print_register_set(process->pid);
+                for (int j = 0; j < process->size / PAGE_SIZE; j++) {
+                    if (process->page_table[j].valid) {
+                        frame_list[process->page_table[j].frame_number] = -1;
+                    }
+                }
+                for (int k = i; k < process_count - 1; k++) {
+                    process_list[k] = process_list[k + 1];
+                }
+                process_count--;
+                i--;
+            }
+        }
 
         clock++; 
 
@@ -101,9 +145,13 @@ int execute(Process *process)
     char opcode;
 
     // TODO: Restore register set 
-    
+    for (int i = 0; i < MAX_REGISTERS; i++) {
+        register_set[i] = process->temp_reg_set[i];
+    }
     // TODO: Fetch instruction and update program counter      
-    
+    read_page(process, process->pc, instruction, INSTRUCTION_SIZE);
+    process->pc += INSTRUCTION_SIZE;
+
     // Execute instruction according to opcode 
     opcode = instruction[0];
     switch (opcode) {
@@ -124,8 +172,15 @@ int execute(Process *process)
     }
 
     // TODO: Store register set     
-
+    for (int i = 0; i < MAX_REGISTERS; i++) {
+        process->temp_reg_set[i] = register_set[i];
+    }
     // TODO: When the last instruction is executed return 1, otherwise return 0 
+    if (process->pc >= process->num_inst * INSTRUCTION_SIZE) {
+        return 1;
+    } else {
+        return 0;
+    }
 }
 
 
@@ -143,12 +198,27 @@ void read_page(Process *process, int virt_addr, void *buf, size_t count)
 // Write 'buf' up to 'count' bytes at the 'virt_addr' 
 void write_page(Process *process, int virt_addr, const void *buf, size_t count)
 {
+    int page_number = virt_addr / PAGE_SIZE;
+    int offset = virt_addr % PAGE_SIZE;
     // TODO: Get a physical address from virtual address 
+    if (!process->page_table[page_number].valid) {
+        // TODO: handle page fault -> just allocate page 
+        for (int i = 0; i < NUM_PAGES; i++) {
+            if (frame_list[i] == -1) {
+                process->page_table[page_number].frame_number = i;
+                process->page_table[page_number].valid = 1;
+                frame_list[i] = process->pid;
+                break;
+            }
+        }
+        
+    }
     
-    // TODO: handle page fault -> just allocate page 
+    int frame_number = process->page_table[page_number].frame_number;
+    int phys_addr = frame_number * PAGE_SIZE + offset;
    
     // TODO: Write 'buf' up to 'count' bytes at the physical address 
-
+    memcpy(buf, &phy_memory[phys_addr], count);
 }
 
 
